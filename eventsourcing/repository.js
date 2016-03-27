@@ -15,7 +15,12 @@ EntityRepo = class {
     this._eventCollections = this._eventCollections || {};
     return this._eventCollections;
   }
-  register(type, {attachHelpers = true, unbacked = false} = {}) {
+  register(type, {
+    attachHelpers = true, // When an entity is registered attach helper functions which give access to the underlying collection?
+    unbacked = false,     // Use unbacked mongo collections e.g. Mongo.Collection(null)
+    strict = false,       // Always fetch entities by replaying an entities events against an empty object
+    commandLog = false,   // Also keep a log of commands
+  } = {}) {
     check(type, Function);
     check(attachHelpers, Boolean);
     check(unbacked, Boolean);
@@ -116,6 +121,8 @@ EntityRepo = class {
     _.each(events, (doc) => eventsCollection.insert(doc));
 
     // XXX emit the events
+
+    // XXX log commands (if requested)
 
     // Save the doc
     const entityDoc = entity.raw();

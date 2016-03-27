@@ -151,11 +151,21 @@ EntityCommand = class {
     this._properties = this._properties || {};
     return this._properties;
   }
+  metadata() {
+    this._properties = this._properties || {};
+    return this._properties;
+  }
   raw() {
     const doc = {
       properties: _.clone(this.properties()),
+      metadata: _.clone(this.metadata()),
     };
 
+    _.extend(doc, _.pick(
+      this,
+      '_id',
+      '_timestamp'
+    ));
     return doc;
   }
   applyTo(entity) {
@@ -181,6 +191,7 @@ EntityCommand = class {
 
     const entity = new this();
     entity._properties = payload;
+    entity._timestamp = new Date();
 
     return entity;
   }
