@@ -85,6 +85,8 @@ EntityEvent = class {
       '_timestamp'
     ));
 
+    doc._event = this.typeName;
+
     return doc;
   }
   applyTo(entity) {
