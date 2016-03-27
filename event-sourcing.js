@@ -34,7 +34,7 @@ UpdatedForecastedDates = EntityEvent.define(
 
 ComputeOptimalDate = EntityCommand.define(
   WeeklyPlanting,
-  "UpdateTargetDates",
+  "ComputeOptimalDate",
   (command, planting) => {
     const targetDates = planting.properties().targetDates;
     check(targetDates, {
@@ -50,11 +50,25 @@ ComputeOptimalDate = EntityCommand.define(
   }
 );
 
+Repo = EntityRepo.create();
+Repo.registerMany(
+  WeeklyPlanting,
+  UpdatedTargetDates,
+  UpdateTargetDates,
+  UpdatedForecastedDates,
+  ComputeOptimalDate
+);
+
 if (Meteor.isClient) {
+  transaction = Repo.transaction();
+
   planting = WeeklyPlanting.create();
 
   planting.applyCommand(UpdateTargetDates.create({
     transplantDate: moment([2015]).toDate(),
   }));
   planting.applyCommand(ComputeOptimalDate.create());
+
+  transaction.insert(planting);
+  transaction.commit();
 }

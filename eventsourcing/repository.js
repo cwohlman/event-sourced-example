@@ -8,23 +8,52 @@ EntityRepo = class {
     return this._types;
   }
   entityCollections() {
-    this._entityCollections = this._entityCollections || [];
+    this._entityCollections = this._entityCollections || {};
     return this._entityCollections;
   }
   eventCollections() {
-    this._eventCollections = this._eventCollections || [];
+    this._eventCollections = this._eventCollections || {};
     return this._eventCollections;
   }
-  register(type) {
-    check(type, Match.OneOf(Entity, EntityEvent, EntityCommand));
+  register(type, {attachHelpers = true, unbacked = false} = {}) {
+    check(type, Function);
+    check(attachHelpers, Boolean);
+    check(unbacked, Boolean);
+    check(type.prototype, Match.OneOf(Entity, EntityEvent, EntityCommand));
 
-    this.checkName(type.typeName);
+    const typeName = type.typeName;
+    this.checkName(typeName);
 
-    if (type instanceof Entity) {
+    if (type.prototype instanceof Entity) {
       this.createCollections(type);
     }
 
+    if (attachHelpers) {
+      const repo = this;
+      type.find = function() {
+        const collection = repo.entityCollections()[typeName];
+        return collection.find.apply(collection, arguments);
+      };
+      type.findOne = function() {
+        const collection = repo.entityCollections()[typeName];
+        return collection.findOne.apply(collection, arguments);
+      };
+      type.events = {
+        find() {
+          const collection = repo.eventCollections()[typeName];
+          return collection.find.apply(collection, arguments);
+        },
+        findOne() {
+          const collection = repo.eventCollections()[typeName];
+          return collection.findOne.apply(collection, arguments);
+        },
+      };
+    }
+
     this.types()[typeName] = type;
+  }
+  registerMany(...types) {
+    _.each(types, (type) => this.register(type));
   }
   checkName(name) {
     check(name, String);
@@ -37,14 +66,18 @@ EntityRepo = class {
     this._names.push(name);
   }
   createCollections(type) {
-    const name = type.typeName();
+    const name = type.typeName;
     check(name, String);
+
+    const entityCollections = this.entityCollections();
+    const eventCollections = this.eventCollections();
     if (this.unbacked) {
-      this.entityCollections()[name] = new Mongo.Collection(null);
-      this.eventCollections()[name] = new Mongo.Collection(null);
+      entityCollections[name] = new Mongo.Collection(null);
+      eventCollections[name] = new Mongo.Collection(null);
     } else {
-      this.entityCollections()[name] = new Mongo.Collection(`${name}/entities`);
-      this.eventCollections()[name] = new Mongo.Collection(`${name}/events`);
+      entityCollections[name] = new Mongo.Collection(`${name}/entities`);
+      eventCollections[name] = new Mongo.Collection(`${name}/events`);
+      // XXX indexes
     }
   }
   _get(typeName, entityId) {
@@ -71,7 +104,7 @@ EntityRepo = class {
     let entityVersion = entity._version || 0;
 
     // Save events
-    const events = _.map(entity.events, (event) => {
+    const events = _.map(entity.events(), (event) => {
       const doc = event.raw();
 
       doc._entity = entityId;
@@ -82,6 +115,8 @@ EntityRepo = class {
 
     _.each(events, (doc) => eventsCollection.insert(doc));
 
+    // XXX emit the events
+
     // Save the doc
     const entityDoc = entity.raw();
     entityDoc._version = entityVersion;
@@ -90,12 +125,18 @@ EntityRepo = class {
     // Make sure nobody uses this event again.
     entity.isInvalid = true;
   }
-  create() {
+  transaction() {
     const repo = this;
     return {
       entities(typeName) {
         this._entities = this._entities || {};
+        if (!typeName) {
+          return this._entities;
+        }
+
+        check(typeName, String);
         this._entities[typeName] = this._entities[typeName] || {};
+
         return this._entities[typeName];
       },
       get(typeName, entityId) {
@@ -109,6 +150,18 @@ EntityRepo = class {
             entity._version = doc._version;
           }
         }
+        return entity;
+      },
+      insert(entity) {
+        entity._id = entity._id || Random.id();
+        this.entities(entity.typeName)[entity._id] = entity;
+      },
+      create(typeName) {
+        const EntityType = repo.types()[typeName];
+        const entity = new EntityType();
+
+        this.insert(entity);
+
         return entity;
       },
       commit() {

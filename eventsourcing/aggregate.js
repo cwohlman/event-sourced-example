@@ -66,9 +66,14 @@ EntityEvent = class {
     this._properties = this._properties || {};
     return this._properties;
   }
+  metadata() {
+    this._metadata = this._metadata || {};
+    return this._metadata;
+  }
   raw() {
     const doc = {
       properties: _.clone(this.properties()),
+      metadata: _.clone(this.metadata()),
     };
 
     _.extend(doc, _.pick(
