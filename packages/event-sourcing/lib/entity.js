@@ -1,10 +1,16 @@
-Entity = class {
+import { _ } from 'meteor/underscore';
+import { check } from 'meteor/check';
+
+export default class Entity {
   constructor(properties) {
     _.extend(this, properties);
   }
   static define(typeName) {
+    check(typeName, String);
+
     const definition = class Entity extends this { };
     definition.prototype._typeName = typeName;
+
     return definition;
   }
   static create(properties) {
@@ -20,7 +26,14 @@ Entity = class {
     _.extend(this, properties);
   }
   raw() {
-    // XXX get only serializable properties, not functions.
-    return _.omit(this);
+    const result = {};
+
+    _.each(this, (val, key) => {
+      if (!_.isFunction(val)) result[key] = val;
+    });
+
+    result._typeName = this._typeName;
+
+    return result;
   }
-};
+}

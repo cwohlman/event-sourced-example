@@ -1,4 +1,9 @@
-EntityRepo = class {
+import { _ } from 'meteor/underscore';
+import { Mongo } from 'meteor/mongo';
+import Entity from './entity.js';
+import Transaction from './transaction.js';
+
+export default class EntityRepo {
   constructor() { }
   static create(options) {
     const repo = new this();
@@ -24,13 +29,14 @@ EntityRepo = class {
   }
   transactions() {
     if (!this._transactions) {
-      if (this.options().unbacked) {
-        this._transactions = new Mongo.Collection();
-      } else {
-        this._transactions = new Mongo.Collection('commandLog');
+      const namespace = this.options().mongoNamespace;
+      if (namespace) {
+        this._transactions = new Mongo.Collection(`${namespace}/commandLog`);
         if (Meteor.isServer) {
           this._transactions._ensureIndex({ _eventIds: 1 }, {unique: true});
         }
+      } else {
+        this._transactions = new Mongo.Collection(null);
       }
     }
     return this._transactions;
@@ -44,6 +50,8 @@ EntityRepo = class {
   }
   registerType(Definition) {
     const typeName = this._getTypeName(Definition);
+
+    this._checkName(typeName);
     this.types()[typeName] = Definition;
 
     if (Definition.prototype instanceof Entity) {
@@ -74,6 +82,18 @@ EntityRepo = class {
 
     return collections.entities.findOne({ _id: id });
   }
+  getEvents(Definition, id) {
+    const typeName = this._getTypeName(Definition);
+    const collections = this.collections()[typeName];
+
+    if (id) {
+      return collections.events.find({ _entityId: id }).fetch();
+    }
+    return collections.events.find({ }).fetch();
+  }
+  getTransactions() {
+    return this.transactions().find().fetch();
+  }
   emitEvent(event) {
     const entityClass = this._getEventEntityName(event);
     const collections = this.collections()[entityClass];
@@ -101,17 +121,23 @@ EntityRepo = class {
   _getEventEntityName(entity) {
     return this._getTypeName(entity._entityClass);
   }
+  _checkName(typeName) {
+    if (this.types()[typeName]) {
+      throw new Error(`Type already registered with same name: ${name}`);
+    }
+  }
   _createCollections(typeName) {
-    if (this.options().unbacked) {
+    const namespace = this.options().mongoNamespace;
+    if (namespace) {
       return {
-        entities: new Mongo.Collection(),
-        events: new Mongo.Collection(),
+        entities: new Mongo.Collection(`${namespace}/${typeName}/entities`),
+        events: new Mongo.Collection(`${namespace}/${typeName}/events`),
       };
     }
 
     return {
-      entities: new Mongo.Collection(`${typeName}/entities`),
-      events: new Mongo.Collection(`${typeName}/events`),
+      entities: new Mongo.Collection(null),
+      events: new Mongo.Collection(null),
     };
   }
   _callHandlers(event) {
@@ -122,4 +148,4 @@ EntityRepo = class {
       handler(event);
     });
   }
-};
+}

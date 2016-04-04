@@ -1,9 +1,16 @@
-EntityCommand = class {
+import { _ } from 'meteor/underscore';
+import { check } from 'meteor/check';
+
+export default class EntityCommand {
   constructor() { }
   static define(typeName, action) {
+    check(typeName, String);
+    check(action, Function);
+
     const definition = class EntityCommand extends this { };
     definition.prototype._action = action;
     definition.prototype._typeName = typeName;
+
     return definition;
   }
   static create(properties, metadata) {
@@ -32,4 +39,11 @@ EntityCommand = class {
     this._metadata = this._metadata || {};
     return this._metadata;
   }
-};
+  raw() {
+    return {
+      _command: this._typeName,
+      properties: _.clone(this.properties()),
+      metadata: _.clone(this.metadata()),
+    };
+  }
+}

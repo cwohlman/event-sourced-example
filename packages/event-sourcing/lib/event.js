@@ -1,6 +1,13 @@
-EntityEvent = class Event {
+import { _ } from 'meteor/underscore';
+import { check } from 'meteor/check';
+
+export default class EntityEvent {
   constructor() { }
   static define(entityClass, typeName, applyTo) {
+    check(entityClass, Function);
+    check(typeName, String);
+    check(applyTo, Function);
+
     const definition = class EntityEvent extends this { };
     definition.prototype._applyTo = applyTo;
     definition.prototype._typeName = typeName;
@@ -41,4 +48,4 @@ EntityEvent = class Event {
       metadata: _.clone(this.metadata()),
     };
   }
-};
+}

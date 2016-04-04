@@ -1,4 +1,7 @@
-Transaction = class {
+import { _ } from 'meteor/underscore';
+import { Random } from 'meteor/random';
+
+export default class EntityTransaction {
   constructor() {}
   static create(repo, command) {
     const transaction = new this();
@@ -61,4 +64,4 @@ Transaction = class {
 
     return doc;
   }
-};
+}
