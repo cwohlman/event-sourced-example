@@ -15,6 +15,12 @@ Package.onUse(function(api) {
   api.use('ecmascript');
 
   api.mainModule('event-sourcing.js');
+
+  api.export('Entity');
+  api.export('EntityEvent');
+  api.export('EntityCommand');
+  api.export('EntityRepo');
+  api.export('EntityTransaction');
 });
 
 Package.onTest(function(api) {

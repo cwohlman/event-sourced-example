@@ -21,6 +21,7 @@ insecure                # Allow all DB writes from clients (for prototyping)
 check
 random
 
+cwohlman:event-sourcing
 momentjs:moment
 standard-minifier-css
 standard-minifier-js

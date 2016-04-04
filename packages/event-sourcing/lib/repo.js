@@ -80,7 +80,7 @@ export default class EntityRepo {
     const typeName = this._getTypeName(Definition);
     const collections = this.collections()[typeName];
 
-    return collections.entities.findOne({ _id: id });
+    return collections.entities.findOne({ _id: id }, { transform: Definition.transform() });
   }
   getEvents(Definition, id) {
     const typeName = this._getTypeName(Definition);
