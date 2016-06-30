@@ -37,6 +37,22 @@ export default class EntityRepo {
         }
       } else {
         this._transactions = new Mongo.Collection(null);
+        const insert = this._transactions.insert;
+        this._transactions.insert = function(doc) {
+          // HACK - mimics an index
+          const idsToCheck = doc._eventIds;
+          if (_.isArray(idsToCheck)) {
+            const transactions = this.find({
+              _eventIds: {
+                $in: idsToCheck,
+              },
+            }).count();
+
+            if (transactions) throw new Error();
+          }
+
+          insert.apply(this, arguments);
+        };
       }
     }
     return this._transactions;
@@ -67,11 +83,78 @@ export default class EntityRepo {
   }
   executeCommand(command) {
     const transaction = this.createTransaction(command);
-
     let result = command.execute(transaction);
-    transaction.commit();
-
+    try {
+      transaction.commit();
+    } catch (error) {
+      this.rollbackStuckTransactions(transaction);
+      transaction.rollback();
+      if (command.retryCount() < 3) {
+        console.log(`Retried transaction of type ${command._typeName}.`);
+        command.incrementRetryCount();
+        this.executeCommand(command);
+      } else {
+        throw error;
+      }
+    }
     return result;
+  }
+  rollbackStuckTransactions(transaction) {
+    const idsToCheck = transaction.raw()._eventIds;
+
+    const transactions = this.transactions().find({
+      _eventIds: {
+        $in: idsToCheck,
+      },
+    }).fetch();
+
+    _.each(transactions, (t) => {
+      let isStuckTransaction = false;
+      _.each(t._eventIds, (id, i) => {
+        let [ _entityId, _version ] = id.split(":");
+        _version = Number(_version);
+        let typeName;
+        if (t._eventTypes) {
+          typeName = t._eventTypes[i];
+        } else {
+          const conflictingEvent = _.findWhere(transaction.events(), {
+            _entityId,
+          });
+          typeName = conflictingEvent && conflictingEvent._entityClass._typeName;
+        }
+        if (typeName) {
+          const entity = this._get(typeName, _entityId);
+          const event = this._getEvents(
+            typeName,
+            _entityId,
+            { _version }
+          )[0];
+
+          const isStuckEntity = !entity || !event || (entity._version < event._version);
+
+          if (isStuckEntity) {
+            isStuckTransaction = true;
+            // XXX instead of doing this we should roll back the transaction.
+            if (entity) {
+              const collections = this.collections()[typeName];
+              collections.entities.update(entity._id, {
+                $set: {
+                  _version,
+                },
+              });
+            }
+          }
+        }
+      });
+
+      if (isStuckTransaction) {
+        this.transactions().update(t._id, {
+          $set: {
+            _failed: true,
+          },
+        });
+      }
+    });
   }
   createTransaction(command) {
     return Transaction.create(this, command);
@@ -79,17 +162,31 @@ export default class EntityRepo {
   get(Definition, id) {
     const typeName = this._getTypeName(Definition);
     const collections = this.collections()[typeName];
+    const query = {};
 
-    return collections.entities.findOne({ _id: id }, { transform: Definition.transform() });
+    if (id) query._id = id;
+    return collections.entities.findOne(query, { transform: Definition.transform() });
   }
-  getEvents(Definition, id) {
-    const typeName = this._getTypeName(Definition);
+  _get(typeName, id) {
+    const Definition = this.types()[typeName];
+    const collections = this.collections()[typeName];
+    const query = {};
+
+    if (id) query._id = id;
+    return collections.entities.findOne(query, { transform: Definition.transform() });
+  }
+  getEvents(Definition, id, query = {}, options = {}) {
+    const typeName = this._getTypeName(Definition, id, query, options);
+
+    return this._getEvents(typeName, id, query, options);
+  }
+  _getEvents(typeName, id, query = {}, options = {}) {
     const collections = this.collections()[typeName];
 
     if (id) {
-      return collections.events.find({ _entityId: id }).fetch();
+      query._entityId = id;
     }
-    return collections.events.find({ }).fetch();
+    return collections.events.find(query, options).fetch();
   }
   getTransactions() {
     return this.transactions().find().fetch();
@@ -109,6 +206,17 @@ export default class EntityRepo {
   updateEntity(entity) {
     const typeName = this._getEntityTypeName(entity);
     const collections = this.collections()[typeName];
+
+    // XXX sanitize entity._id
+    // not sure exactly how to do this, maybe a simple check(_id, String)?
+
+    // XXX for now we can't remove entities because then we wouldn't be able
+    // to restore them. We should handle this better.
+    // NOTE Users of this repo will need to filter out removed entities
+    // since we don't remove them.
+    // if (entity.removed()) {
+    //   return collections.entities.remove({ _id: entity._id });
+    // }
 
     return collections.entities.upsert(entity._id, entity.raw());
   }

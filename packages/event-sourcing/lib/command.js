@@ -16,6 +16,7 @@ export default class EntityCommand {
   static create(properties, metadata) {
     const command = new this();
 
+    command._timestamp = new Date();
     _.each(properties, (value, key) => command.properties()[key] = value);
     _.each(metadata, (value, key) => command.metadata()[key] = value);
 
@@ -39,9 +40,17 @@ export default class EntityCommand {
     this._metadata = this._metadata || {};
     return this._metadata;
   }
+  retryCount() {
+    this._retryCount = this._retryCount || 0;
+    return this._retryCount;
+  }
+  incrementRetryCount() {
+    this._retryCount = this.retryCount() + 1;
+  }
   raw() {
     return {
       _command: this._typeName,
+      _timestamp: this._timestamp,
       properties: _.clone(this.properties()),
       metadata: _.clone(this.metadata()),
     };

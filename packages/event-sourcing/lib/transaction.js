@@ -17,11 +17,10 @@ export default class EntityTransaction {
   events() {
     return (this._events = this._events || []);
   }
-  get(type, id) {
-    let entity;
-    if (_.isNull(id)) entity = new type({ _id: id = Random.id(), _version: 0 });
-    if (!entity) entity = this.entities()[id];
-    if (!entity) entity = this.repo.get(type, id);
+  get(TheType, id) {
+    let entity = this.entities()[id];
+    if (!entity && id) entity = this.repo.get(TheType, id);
+    if (!entity) entity = new TheType({ _id: (id = id || Random.id()), _version: 0 });
 
     this.entities()[id] = entity;
 
@@ -50,14 +49,22 @@ export default class EntityTransaction {
     this._events = null;
     this._completed = true;
   }
+  rollback() {
+    // XXX implement this
+  }
   raw() {
     const commandName = this.repo._getEntityTypeName(this.command);
     const eventIds = _.map(this.events(), (e) => {
       return `${e._entityId}:${e._version}`;
     });
+    const eventTypes = _.map(this.events(), (e) => {
+      return e._entityClass._typeName;
+    });
     const doc = {
       _command: commandName,
       _eventIds: eventIds,
+      _eventTypes: eventTypes,
+      _timestamp: this.command._timestamp,
       properties: this.command.properties(),
       metadata: this.command.metadata(),
     };

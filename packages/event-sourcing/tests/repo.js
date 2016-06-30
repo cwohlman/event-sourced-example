@@ -3,6 +3,19 @@ import { chai } from 'meteor/practicalmeteor:chai';
 import { Mongo } from 'meteor/mongo';
 
 const assert = chai.assert;
+
+function matchDeeply(actual, expected) {
+  _.each(expected, (val, key) => {
+    const actualVal = actual[key];
+    if (_.isObject(val)) {
+      assert(_.isObject(actualVal), `${key} should be an object, but is ${typeof actualVal}`);
+      matchDeeply(actualVal, val);
+    } else {
+      assert.equal(actualVal, val, `${key} should be ${val}, but is ${actualVal}`);
+    }
+  });
+}
+
 describe("Repo", function() {
   const entityName = "Goat";
   const eventName = "Shorn";
@@ -71,6 +84,8 @@ describe("Repo", function() {
     let Book;
     let BookCheckedOut;
     let CheckOutBook;
+    let BookRemoved;
+    let RemoveBook;
     let commandWasCalled;
     let checkedOutBy = "Joe Patron";
 
@@ -87,6 +102,19 @@ describe("Repo", function() {
 
         transaction.emit(event, book);
         commandWasCalled = true;
+
+        return book._id;
+      });
+      BookRemoved = Event.define(Book, 'checkedout', (book) => {
+        book.remove();
+      });
+      RemoveBook = Command.define('checkout', (transaction, properties) => {
+        let book = transaction.get(Book, properties.bookId);
+        let event = BookRemoved.create({
+          bookId: properties.bookId,
+        });
+
+        transaction.emit(event, book);
 
         return book._id;
       });
@@ -123,7 +151,7 @@ describe("Repo", function() {
 
       repo.executeCommand(command);
 
-      const events = repo.getEvents(Book, null);
+      const events = repo.getEvents(Book);
       assert.isObject(events[0]);
       assert.sameMembers(_.keys(events[0]), [
         "_id",
@@ -156,12 +184,26 @@ describe("Repo", function() {
       const result = repo.executeCommand(command);
 
       const entity = repo.get(Book, result);
-      assert.deepEqual(entity, {
+      _.each({
         _id: result,
         _version: 1,
         _typeName: Book.prototype._typeName,
         checkedOutBy,
+      }, (val, key) => assert.equal(entity[key], val, `${key} should be ${val}`));
+    });
+    it("should remove entities", function() {
+      const bookId = repo.executeCommand(CheckOutBook.create({
+        bookId: null,
+        checkedOutBy,
+      }));
+      const command = RemoveBook.create({
+        bookId,
       });
+
+      const result = repo.executeCommand(command);
+
+      const entity = repo.get(Book, result);
+      assert.isUndefined(entity);
     });
     it("should log transactions", function() {
       const command = CheckOutBook.create({
@@ -174,7 +216,7 @@ describe("Repo", function() {
       const transactions = repo.getTransactions();
       const transaction = transactions[0];
       assert.isObject(transaction);
-      assert.deepEqual(_.omit(transaction, '_id'), {
+      matchDeeply(_.omit(transaction, '_timestamp', '_id'), {
         _command: 'checkout',
         _eventIds: [
           `${result}:1`,
@@ -186,6 +228,41 @@ describe("Repo", function() {
         metadata: {
 
         },
+      });
+    });
+    it("should retry stuck transactions", function() {
+      // There's some setup required here
+      let entity;
+      (function createBook() {
+        const command = CheckOutBook.create({
+          bookId: null,
+          checkedOutBy,
+        });
+
+        const result = repo.executeCommand(command);
+
+        entity = repo.get(Book, result);
+      })();
+      (function corruptTransactionLog() {
+        repo.transactions().insert({
+          _eventIds: [`${entity._id}:${entity._version + 1}`],
+        });
+      })();
+
+      // Now actually try to checkout the book
+      const command = CheckOutBook.create({
+        bookId: entity._id,
+        checkedOutBy,
+      });
+      const result = repo.executeCommand(command);
+
+      // Check that the entity was updated
+      entity = repo.get(Book, result);
+      matchDeeply(entity, {
+        _id: result,
+        _version: 3,
+        _typeName: Book.prototype._typeName,
+        checkedOutBy,
       });
     });
   });

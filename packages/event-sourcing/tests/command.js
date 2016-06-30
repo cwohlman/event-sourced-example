@@ -117,7 +117,7 @@ describe("Command", function() {
 
       const result = command.raw();
 
-      assert.deepEqual(result, {
+      assert.deepEqual(_.omit(result, '_timestamp'), {
         _command: commandName,
         properties: expectedProperties,
         metadata: expectedMetadata,

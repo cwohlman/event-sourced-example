@@ -10,6 +10,7 @@ export default class Entity {
 
     const definition = class Entity extends this { };
     definition.prototype._typeName = typeName;
+    definition._typeName = typeName;
 
     return definition;
   }
@@ -19,9 +20,22 @@ export default class Entity {
   static transform() {
     return (properties) => this.create(properties);
   }
+  remove() {
+    this._removed = true;
+  }
+  restore() {
+    this._removed = false;
+  }
+  removed() {
+    return this._removed;
+  }
+  exists() {
+    return this._removed === false && this._version !== 0;
+  }
   set(properties) {
-    if (_.any(_.keys(properties), (key) => key.match(/^_/))) {
-      throw new Error("Property names must not begin with an underscore.");
+    let errorKey;
+    if (_.find(_.keys(properties), (key) => key.match(/^_/) && (errorKey = key))) {
+      throw new Error(`Invalid property name "${errorKey}". Property names must not begin with an underscore.`);
     }
     _.extend(this, properties);
   }
